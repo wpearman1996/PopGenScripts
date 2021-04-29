@@ -1,0 +1,1516 @@
+---
+title: "William Data Analysis for Masters Thesis"
+output: html_notebook
+---
+
+
+Data preparation - this section is purely about filtering the data and preparing it for downstream analysis. It should only need to be run ONCE, then the output can be reloaded back into R for further analysis.
+so i have hashed it out to prevent accidental running - otherwise data could be overwritten
+
+```{r echo=FALSE}
+library(dartR)
+data <- gl.read.dart(filename = ".//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                             ind.metafile = ".//metadata.csv", probar = TRUE)
+### Population genomic SNP filtering - each set consists of identify SNPs suitable for population genetic inference 
+### This is first done by separating the data into the old and new data sets (william_data and sarah_data)
+### Once this is done, we apply the filters and extract a list of loci shared between both datasets.
+### Then we return to the original data and remove all loci except those that were shared between datasets. 
+### Then we repeat the filtering on this new dataset to make sure all the filters are still applied accross the data
+### and BAM now we have data that is almost ready for population genomic analyses that involves comparing both datasets.
+### We now have to apply a q-value filter to remove loci under selection - thats in the next section
+william_data1<-gl.drop.pop(data,c("Stanmore Bay Old","Kaikoura","Hatfields Beach"),recalc = TRUE)
+william_data<-gl.drop.ind(william_data1,ind.list = "BBFA3", recalc = TRUE)
+william_data<-gl.filter.callrate(william_data,threshold = 0.8,method="loc")
+william_data<-gl.filter.rdepth(william_data,lower = 3, upper = 50)
+william_data<-gl.filter.repavg(william_data,threshold=0.95)
+william_data<-gl.filter.monomorphs(william_data)
+william_data<-gl.filter.secondaries(william_data,method="best")
+
+
+sarah_data1<-gl.drop.pop(data,c("StanmoreBay","Opito Bay","Browns Bay","Mahia Peninsula","Mt Maunganui","Worser Bay"),recalc = TRUE)
+
+sarah_data<-gl.filter.callrate(sarah_data1,threshold = 0.8,method = "loc")
+sarah_data<-gl.filter.rdepth(sarah_data,lower = 3, upper = 50)
+sarah_data<-gl.filter.repavg(sarah_data,threshold=0.95)
+sarah_data<-gl.filter.monomorphs(sarah_data)
+sarah_data<-gl.filter.secondaries(sarah_data,method="best")
+
+
+shared_snps<-(intersect(sarah_data$loc.names,william_data$loc.names))
+#non_shared_snps<-data$loc.names[! data$loc.names %in% shared_snps]
+#overlapped_data<-gl.drop.loc(data,loc.list  = non_shared_snps)
+
+
+# At this point we upload the bayescan datafile to GRU and run bayescan on it
+### bayescan command is: ./BayeScan2.1/binaries/BayeScan2.1_linux64bits ./data.txt ./bayescan_analysis2 --threads 22
+#library(hierfstat)
+#x<-gl2gi(overlapped_data)
+#x<-genind2hierfstat(x)
+#x_loci<-overlapped_data$loc.names
+#write.bayescan(x,fn="./Isopod Photos and Project/BayeScan/hierfstat + BSOUTPUT/data.txt")
+
+
+#####
+#bayescan_qvalues<-read.table("./Isopod Photos and Project/BayeScan/hierfstat + BSOUTPUT/data_fst.txt")
+#bayescan_qvalues$loci<-x_loci
+#Remove loci with Q-Values < 0.05
+#bayescan_dropped<-bayescan_qvalues[bayescan_qvalues$qval <= 0.05,]
+#mixed_data<-gl.drop.loc(overlapped_data,loc.list = bayescan_dropped$loci)
+
+#mixed_data<-gl.drop.ind(mixed_data,ind.list = "BBFA3", recalc = TRUE)
+
+#mixed_data<-gl.filter.callrate(mixed_data,threshold = 0.9,method="loc", recalc = T)
+#mixed_data<-gl.filter.rdepth(mixed_data,lower = 3, upper = 50)
+#mixed_data<-gl.filter.repavg(mixed_data,threshold=0.95)
+
+#mixed_data<-gl.filter.monomorphs(mixed_data)
+#mixed_data<-gl.filter.secondaries(mixed_data,method="best")
+
+
+#library(radiator)
+#mixed_data_tidygl<-tidy_genlight(data = mixed_data, tidy = TRUE, gds = FALSE)
+#mac_filt<-filter_mac(data = mixed_data_tidygl, interactive.filter = FALSE, filter.mac = 3)
+#keep_loc<-unique(as.character(mac_filt$LOCUS))
+#keep_loc<-sub("_([^_]*)$", "/\\1", keep_loc)
+#keep_loc<-gsub("_","-",keep_loc)
+#gone_loc<-setdiff(mixed_data$loc.names,keep_loc)
+#mixed_data<-gl.drop.loc(mixed_data,gone_loc)
+#obshet<-gl2gi(mixed_data)
+#library(hierfstat)
+#obshet<-basic.stats(obshet)
+#obshet<-as.data.frame(cbind(obshet$perloc$Ho,rownames(obshet$perloc)))
+#obshet$V1<-as.numeric(as.character(obshet$V1))
+#obshet<-as.character(obshet$V2[obshet$V1>0.5])
+#obshet<-gsub("\\.","-",obshet)
+#obshet<-gsub("X","",obshet)
+#obshet<-sub("-([^-]*)$", "/\\1", obshet)
+#data_pop_gen_analysis<-gl.drop.loc(mixed_data,obshet)
+
+#save(data_pop_gen_analysis,file="./Isopod Photos and Project/data_pop_gen_analysis.rData")
+```
+
+Load the data back into R
+```{r echo=FALSE}
+load("./data_pop_gen_analysis.rData")
+```
+
+Testing for differences among colouration within population
+
+```{r echo=FALSE}
+ind_data<-read.csv("./isopod_morph_index.csv",stringsAsFactors = F)
+data_pop_gen_analysis_col<-data_pop_gen_analysis
+library(dartR)
+data_pop_gen_analysis_col<-gl.drop.pop(data_pop_gen_analysis_col,pop.list=c("Opito Bay","Kaikoura","Worser Bay","Mahia Peninsula",
+                                                "Mt Maunganui"),recalc=TRUE)
+data_pop_gen_analysis_col$other$ind.metrics$morph<-ind_data$Morph[match(data_pop_gen_analysis_col$other$ind.metrics$id,
+                                                                    ind_data$Code)]
+data_pop_gen_analysis_col$other$ind.metrics$pop<-paste0(data_pop_gen_analysis_col$other$ind.metrics$pop,data_pop_gen_analysis_col$other$ind.metrics$morph)
+library(StAMPP)
+data_pop_gen_analysis_col$pop<-as.factor(data_pop_gen_analysis_col$other$ind.metrics$pop)
+pwfst <-stamppFst(data_pop_gen_analysis_col, nclusters=3)
+```
+
+Now we start getting to the actual data analysis. First we'll start with some basic statistics
+
+```{r echo=FALSE}
+library(dartR)
+library(hierfstat)
+library(pegas)
+data_hw<-hw.test(filt_data_gi,B=0)
+data_hw<-as.data.frame(data_hw)
+data_hw_sig<-data_hw[data_hw$`Pr(chi^2 >)` < 0.05/8020,]
+nonhw_loc<-rownames(data_hw_sig)
+nohw_dat<-gl.drop.loc(data_pop_gen_analysis,nonhw_loc,v=0)
+library(StAMPP)
+pwfst_hw <-stamppFst(nohw_dat, nboots=1000, percent=95, nclusters=3)
+#View(pwfst$Pvalues)
+fst_mat_hw<-as.matrix(round(pwfst_hw$Fsts,3))
+filt_hw<-gl2gi(nohw_dat)
+filt_data_gi<-gl2gi(data_pop_gen_analysis)#,verbose=0, probar=F)
+x<-basic.stats(filt_hw)
+fis<-x$Fis
+
+colMeans(x$Fis,na.rm=TRUE)
+apply(x$Fis,2,sd,na.rm=TRUE) #Gives mean by population of Ho
+colMeans(x$Hs) ## Gives mean by population of He
+apply(x$Hs,2,sd,na.rm=TRUE)
+colMeans(x$Ho) ## Gives mean by population of Ho
+apply(x$Ho,2,sd,na.rm=TRUE)
+
+library(StAMPP)
+pwfst <-stamppFst(data_pop_gen_analysis, nboots=1000, percent=95, nclusters=3)
+#View(cbind(p.adjust(pwfst$Pvalues,method = "BY"),as.vector(pwfst$Pvalues),as.vector(pwfst$Fsts)))
+#View(pwfst$Pvalues)
+fst_mat<-as.matrix(round(pwfst$Fsts,3)) ## Gives us the Fst matrix 
+View(fst_mat)
+library(phangorn)
+plot(upgma(fst_mat))
+
+
+```
+
+
+We're going to start doing the Isolation-By-Distance analysis here. First Step is doing the analysis on all populations
+
+```{r echo=FALSE}
+library(marmap)
+bat <- getNOAA.bathy(169.1, 178.776, -44, -33, res = 1, keep=TRUE) ## Bring in a bathymetric map to allow us to do some least cost path analaysis
+
+Hatfields<-c(-36.569330, 174.708932)
+StanmoreBay<-c(-36.597523, 174.738320)
+StanmoreBayOld<-c(-36.597523, 174.738321)
+BrownsBay<-c(-36.717101, 174.768741)
+OpitoBay<-c(-36.689997, 175.816381)
+MtMaunganui<-c(-37.613310, 176.160670)
+Mahia<-c(-39.074737, 177.933028)
+WorserBay<-c(-41.374389, 174.794772)
+Kaikoura<-c(-42.425248, 173.717603)
+coords<-as.data.frame(rbind(StanmoreBayOld,Kaikoura,Hatfields, BrownsBay,OpitoBay,
+                            MtMaunganui,Mahia,StanmoreBay,WorserBay))
+colnames(coords)<-c("y","x")
+sites<-coords[c(2,1)]
+rownames(sites)<-1:9
+# Convert to transition object
+trans1<-trans.mat(bat)
+#Prevent movement in depths > 150m
+trans2 <- trans.mat(bat, max.depth =-150)
+
+
+library(fossil);library(raster)
+
+dist2 <- lc.dist(trans2, sites, res = "dist")
+dist_mat<-as.matrix(dist2)
+dist_mat[upper.tri(dist_mat,diag = T)] <- NA
+
+
+nifst<-fst_mat[c(1,3,4,5,6,7,8),c(1,3,4,5,6,7,8)]
+ni_dist<-dist_mat[c(1,3,4,5,6,7,8),c(1,3,4,5,6,7,8)]
+pdf("./popgen_ms_submission/pop_gen_rev/fig5_hwe_keep.pdf",width = 8,height=6)
+plot(dist_mat,(fst_mat/(1-fst_mat)),xlab="Overwater Distance (Km)",ylab="Linearized Fst",pch=16,
+     cex.axis=1.2,cex.lab=1.2,cex=1.2);abline(lm(as.dist(fst_mat)/(1-as.dist(fst_mat))~as.dist(dist_mat)))
+vegan::mantel(fst_mat/(1-fst_mat),dist_mat)
+text.default(x=1000,y=0.15,"Mantel Statistic n=8, R: 0.87",cex=1.2)
+text.default(x=890,y=0.09,"P = 0.001",cex=1.2)
+text.default(x=780,y=0.02, " Linearized Fst ~ -0.002 + 4.8x^-4 * Distance",cex=1.2)
+dev.off()
+
+vegan::mantel(nifst/(1-nifst),ni_dist)
+library(hierfstat)
+bstats = basic.stats(filt_hw)
+global_fst = bstats$overall[8]
+
+freqs = do.call("rbind",pop.freq(filt_hw))
+freqs<-freqs[,c("Stanmore Bay Old","Kaikoura","Hatfields Beach", "Browns Bay","Opito Bay",
+                "Mt Maunganui","Mahia Peninsula","StanmoreBay","Worser Bay")]
+freqs<-t(freqs)
+#remove redundant frequencies; for every SNP lcous, only one of the allele frequencies is informative (as the other is its complement)
+#don't use the code below for microsatellites or for SNPs with more than two alleles
+allvar = apply(freqs,2,var)
+freqs=freqs[,allvar>0]
+freqs = freqs[,seq(1,dim(freqs)[2],2)]
+
+#perform forward selection of spatial variables
+#this may give a lot of output to the console
+library(vegan)
+rda_res = rda(freqs~., coords,scale=FALSE) #nicer for plotys
+print(rda_res)
+
+#calculate variance components
+tot_inert = rda_res$tot.chi
+orig_eigs = rda_res$CCA$eig
+
+all_perc = orig_eigs/tot_inert
+perc.rda = sum(orig_eigs) / tot_inert
+perc.tot = global_fst * perc.rda	
+
+#test overall significance and per axis
+rda_test = rda(freqs~coords$y+coords$x,scale=FALSE) #better for testing
+overall.test = anova.cca(rda_test, step=1000)
+axis.test = anova.cca(rda_test, by="axis", step= 1000)
+overall.test;perc.tot
+```
+Map making  
+```{r echo=FALSE}
+library(maps)
+library(mapdata)
+library(mapproj)
+library(RColorBrewer)
+library(TeachingDemos)
+Hatfields<-c(-36.569330, 174.708932)
+StanmoreBay<-c(-36.597523, 174.738320)
+StanmoreBayOld<-c(-36.597523, 174.738321)
+BrownsBay<-c(-36.717101, 174.768741)
+OpitoBay<-c(-36.689997, 175.816381)
+MtMaunganui<-c(-37.613310, 176.160670)
+Mahia<-c(-39.074737, 177.933028)
+WorserBay<-c(-41.374389, 174.794772)
+Kaikoura<-c(-42.425248, 173.717603)
+coords<-as.data.frame(rbind(StanmoreBayOld,Kaikoura,Hatfields, BrownsBay,OpitoBay,
+                            MtMaunganui,Mahia,StanmoreBay,WorserBay))
+colnames(coords)<-c("y","x")
+data("nzMapEnv")
+cairo_pdf("D://Dropbox/Dropbox/Isopod Photos and Project/popgen_ms_submission/pop_gen_rev//fig1_sampling_map.pdf")
+maps::map("world2Hires",regions = "New Zealand",xlim=c(171,183),ylim=c(-44,-34),col="lightgrey",fill=T)
+map.axes();map.scale(x=176,relwidth=0.2,cex=0.75)
+palette(brewer.pal(9,"Paired"))
+points(coords[c(2,1)],col="black",pch=21,bg=as.factor(rownames(coords)),cex=2)
+dev.off()
+cairo_pdf("D://Dropbox/Dropbox/Isopod Photos and Project/popgen_ms_submission/pop_gen_rev//fig1_sampling_map_inset.pdf")
+maps::map("world2Hires",regions = "New Zealand",xlim=c(174,176),ylim=c(-37,-36),col="lightgrey",fill=T)
+map.axes()#;map.scale(x=174,relwidth=0.2,cex=0.75)
+palette(brewer.pal(9,"Paired"))
+points(coords[c(2,1)],col="black",pch=21,bg=as.factor(rownames(coords)),cex=2)
+dev.off()
+
+```
+
+Now we're going to work out the PCA analyses
+
+```{r echo=FALSE}
+library(patchwork)
+glPca.plot<-function(glPca_object,genlightobject,PrinX,PrinY){
+  #PrinX<-as.integer(PrinX)
+  #PrinY<-as.integer(PrinY)
+  pca.scores<-as.data.frame(glPca_object$scores)
+  pca.scores$pop <- pop(genlightobject)
+  cols <- brewer.pal(n = nPop(genlightobject), name = "BrBG")
+  df<-as.data.frame(cbind(pca.scores[,PrinX],pca.scores[,PrinY]))
+  df$Population<-pca.scores$pop
+  colnames(df)<-c("PCX","PCY","Population")
+  p <- ggplot(df, aes(x=df$PCX, y=PCY, colour="black",fill=Population))
+  p <- p + geom_point(size=2,shape=21)
+  var_frac <- glPca_object$eig/sum(glPca_object$eig)
+  x<-signif(sum(dplyr::nth(var_frac,PrinX)) * 100, 3)
+  y<-signif(sum(dplyr::nth(var_frac,PrinY)) * 100, 3)
+  p <- p + xlab(paste(paste0("PC",PrinX),paste0("(",x,"%"), "of variance explained)",sep=" "))
+  p <- p + ylab(paste(paste0("PC",PrinY),paste0("(",y,"%"), "of variance explained)",sep=" "))
+  p <- p + geom_hline(yintercept = 0) 
+  p <- p + geom_vline(xintercept = 0) 
+  p <- p + theme_bw()
+  p <- p + theme(axis.text = element_text(size = 12))
+  p <- p + theme(axis.title = element_text(size=14))
+  p <- p + theme(legend.text = element_text(size = 12))
+  p <- p + theme(legend.title = element_text(size = 14))
+  #p <- p + theme(plot.margin = margin(2,.8,2,.8,"cm"))
+  p  + scale_fill_manual(labels =c("Browns Bay", "Hatfields Beach", 
+                                      "Kaik\u14dura",
+                                      "M\u101hia Peninsula","Mt Maunganui",
+                                      "Opito Bay","Stanmore Bay 2015","Stanmore Bay",
+                                      "Wellington"),values=brewer.pal(9,"Paired")) +
+    scale_color_manual(values = "black")
+}
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+library(grid)
+y<-glPca(data_pop_gen_analysis,nf=4)
+
+
+
+library(gridExtra);library(grid)
+
+cairo_pdf("./Figures_thesis/pca1_insets.pdf",width = 6, height = 6)
+#setEPS()
+#postscript("./Figures_thesis/pca1_insets.eps",width = 6,height = 6,horizontal = FALSE, onefile = FALSE, paper = "special")
+pdf(file = "./popgen_ms_submission/pop_gen_rev/pca1_insets.pdf", width = 6,height = 6)
+pc1_pc2<-glPca.plot(y,data_pop_gen_analysis,1,2) + theme(legend.position="none") + geom_point(aes(x=-4.330442,y=8.682771176),size=2,fill=brewer.pal(9,"Paired")[5],shape=21)
+pc1_pc2_inset<-glPca.plot(y,data_pop_gen_analysis,1,2) + ylim(-4.5,-2) + xlim(-5,-3.75) + theme(legend.position="none",axis.title.x = element_blank(),axis.title.y = element_blank()) 
+vp_pc1<-viewport(width=0.4,height=0.35,x=0.7,y=0.8) 
+pc1_pc2
+print(pc1_pc2_inset,vp=vp_pc1)
+dev.off()
+#cairo_pdf("./Figures_thesis/pca2_insets.pdf",width = 6, height = 6)
+pdf(file = "./popgen_ms_submission/pop_gen_rev//pca2_insets.pdf", width = 6,height = 6)
+pc2_pc3<-glPca.plot(y,data_pop_gen_analysis,2,3) + theme(legend.position="none") +
+  geom_point(aes(x=8.682771176,y=0.133765936),size=2,fill=brewer.pal(9,"Paired")[5],shape=21)
+pc2_pc3_inset<-glPca.plot(y,data_pop_gen_analysis,2,3) + ylim(-0.75,0.5) + xlim(-4.5,-2) + theme(legend.position="none", axis.title.x = element_blank(), axis.title.y = element_blank()) 
+vp_pc2<-viewport(width=0.4,height=0.35,x=0.7,y=0.8) 
+pc2_pc3
+print(pc2_pc3_inset,vp=vp_pc2)
+dev.off()
+#svg("./popgen_ms_submission/pop_gen_rev//pclegend.svg",width = 2,height = 4)
+pc_legend<-g_legend(glPca.plot(y,data_pop_gen_analysis,1,2)
+)
+#dev.off()
+ggsave(".//popgen_ms_submission/pop_gen_rev/pcalegend.pdf",pc_legend,device = cairo_pdf)
+
+
+```
+
+PCA analysis of just auckland pops
+
+```{r echo=FALSE}
+library(dartR)
+data_ni<-gl.drop.pop(data_pop_gen_analysis,pop.list=c("Opito Bay","Kaikoura","Worser Bay","Mahia Peninsula",
+                                                "Mt Maunganui"),recalc=FALSE)
+ind_data<-read.csv(".//colouration_analysis/colouration_morph_data.csv",stringsAsFactors = F)
+morph<-as.data.frame(data_ni$other$ind.metrics)
+morph$morph<-ind_data$Morph[match(morph$id,ind_data$Code)]
+morph$morph[morph$morph=="Variegated?"]<-"Variegated"
+morph$morph[morph$morph=="White?"]<-"White"
+
+morph$year<-ifelse(grepl("ISO",morph$id),"2016","2018")
+data_ni$other$ind.metrics$pop<-morph$morph
+data_ni$pop<-as.factor(morph$morph)
+#data_ni$pop<-as.factor(as.character(morph$morph))
+glPca.plot<-function(glPca_object,genlightobject,PrinX,PrinY){
+  #PrinX<-as.integer(PrinX)
+  #PrinY<-as.integer(PrinY)
+  pca.scores<-as.data.frame(glPca_object$scores)
+  pca.scores$pop <- pop(genlightobject)
+  cols <- brewer.pal(n = nPop(genlightobject), name = "BrBG")
+  df<-as.data.frame(cbind(pca.scores[,PrinX],pca.scores[,PrinY]))
+  df$Population<-pca.scores$pop
+  colnames(df)<-c("PCX","PCY","Morph")
+  p <- ggplot(df, aes(x=df$PCX, y=PCY, colour=Morph))
+  p <- p + geom_point(size=2)
+  var_frac <- glPca_object$eig/sum(glPca_object$eig)
+  x<-signif(sum(dplyr::nth(var_frac,PrinX)) * 100, 3)
+  y<-signif(sum(dplyr::nth(var_frac,PrinY)) * 100, 3)
+  p <- p + xlab(paste(paste0("PC",PrinX),paste0("(",x,"%"), "of variance explained)",sep=" "))
+  p <- p + ylab(paste(paste0("PC",PrinY),paste0("(",y,"%"), "of variance explained)",sep=" "))
+  p <- p + geom_hline(yintercept = 0) 
+  p <- p + geom_vline(xintercept = 0) 
+  p <- p + theme_bw()
+  p <- p + theme(axis.text = element_text(size = 12))
+  p <- p + theme(axis.title = element_text(size=14))
+  p <- p + theme(legend.text = element_text(size = 12))
+  p <- p + theme(legend.title = element_text(size = 14))
+  #p <- p + theme(plot.margin = margin(2,.8,2,.8,"cm"))
+  p + scale_color_manual(labels = c("Green", "No pattern","Striped","Variegated","White")
+                         ,values=brewer.pal(9,"Paired"))
+}
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+y<-glPca(data_ni,nf=4)
+cairo_pdf("./Figures_thesis/colour_pca.pdf",width = 10)
+glPca.plot(y,data_ni,1,2)
+dev.off()
+
+```
+
+Analysing BBFA3
+
+```{r echo=FALSE}
+library(dartR)
+data <- gl.read.dart(filename = "./Isopod Photos and Project//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                     ind.metafile = "Isopod Photos and Project//metadata.csv", probar = TRUE)
+loc_drop<-data$loc.names[!data$loc.names %in% data$loc.names[c(1:1748)]]
+data_bb<-gl.drop.loc(data,loc.list = loc_drop)
+#glPca.plot(glPca(data_bb),genlightobject = data_bb,2,3)
+data_bb_he<-data_bb
+data_bb_he$pop<-as.factor(data_bb_he$ind.names)
+library(dartR)
+library(hierfstat)
+filt_data_gi<-gl2gi(data_bb_he,verbose=0, probar=F)
+x<-basic.stats(filt_data_gi)
+mean(x[["Ho"]][,2])
+xx<-list()
+for (i in c(1:262)){
+  xx[i]<-mean(x[["Ho"]][,i])
+}
+ObsHo<-do.call("rbind",xx)
+hist(ObsHo,breaks=50)
+(x[["Ho"]][,c(3:50)])
+```
+
+
+With the PC analyses done, we'll compare it to the geographical distribution with a procrustes transformation
+
+```{r echo=FALSE}
+
+library(MCMCpack)
+library(maps)
+library(mapdata)
+library(mapproj)
+library(RColorBrewer)
+data("nzMapEnv")
+iso_pc<-read.csv("./PCA and Procrustes//pca_data.csv",header=TRUE)
+X<-as.matrix(cbind(iso_pc$Long,iso_pc$Lat))
+Xstar<-as.matrix(cbind(iso_pc$PC1,iso_pc$PC2))
+p<-MCMCpack::procrustes(Xstar,X,translation=T,dilation=T)
+pc_points_proc<-as.data.frame(p$X.new)
+pc_points_proc$pop<-as.vector(as.character(iso_pc$Location))
+cairo_pdf("./popgen_ms_submission/pop_gen_rev//procrustes_map.pdf")
+maps::map("world2Hires",regions = "New Zealand",xlim=c(171,180),ylim=c(-43,-36),col="lightgrey",fill=T)
+map.axes();map.scale(x=176,relwidth=0.2,cex=0.75)
+palette(brewer.pal(9,"Paired"))
+points(pc_points_proc[c(1,2)],col="black",pch=21,bg=as.factor(pc_points_proc$pop))
+segments(x0=175.2085-1.78,y=-44,x1=175.2085+0.88,y1=-35,lwd=3,col="grey21")
+segments(x0=169,y=-38.18+1.22,x1=182,y1=-38.18-1.22,lwd=3,col="grey21")
+text(y=-38.18-1,x=179.5,"PC2",srt="-12")
+text(y=-36.3,x=175.2085+.78,"PC1",srt="78")
+arrows(x0=177.7135,y0=-38.03572,x1=177.9916,y1=-39.04185,angle=35,lwd=4,length=0.1)
+arrows(x0=176.6009,y0=-37.28113,x1=176.2301,y1=-37.65842,angle=35,lwd=4,length=0.1)
+arrows(x0=173.8660,y0=-41.84464,x1=174.8858,y1=-41.32361,angle=35,lwd=4,length=0.1)
+arrows(x0=175.9288,y0=-37.10146,x1=175.8593,y1=-36.79603,angle=35,lwd=4,length=0.1)
+dev.off()
+```
+
+
+Now we're going to prep the STRUCTURE analyses the following chunk should only need to be run once - so i have hashed it out to prevent accidental running - otherwise data could be overwritten
+```{r echo=FALSE}
+library(dartR)
+data_pop_gen_auck<-gl.drop.pop(data_pop_gen_analysis,c("Opito Bay","Mt Maunganui","Mahia Peninsula",
+                                                       "Worser Bay","Kaikoura"),mono.rm = T,recalc = T)
+gl2structure(data_pop_gen_auck,outfile="data_pop_gen_auck_locpr.str",
+                    outpath="./Structure_analysis/structure_locprior/")
+##
+
+x<-read.delim("./Structure_analysis/structure_locprior/data_pop_gen_auck_locpr.str",head=FALSE)
+
+x$pop<-rep(data_pop_gen_auck$pop,each=2)
+order_pop<-c("Hatfields Beach","Stanmore Bay Old","StanmoreBay","Browns Bay")
+x<-x[order(match(x$pop, order_pop)), ]
+order_struc<-x$pop
+x<-x[,c(1,7460,2:7459)]
+x$pop<-ifelse(x$pop == "Browns Bay",4,ifelse(x$pop=="StanmoreBay",3,ifelse(x$pop=="Stanmore Bay Old", 2, 1)))
+
+
+write.table(x,"./Structure_analysis/structure_locprior/data_pop_gen_auck_locpr.str")
+# After writing, open the file in excel and remove the first row, and column, then save and upload to gru
+# Then convert to linux file type from windows file type
+# Then run structure using awk '{ sub("\r$", ""); print }'
+```
+
+Now, with that done - we can get into the analyses - again some things have been hashed out as they only need to be run once.
+
+
+```{r echo=FALSE}
+library("pophelper")
+setwd("./Structure_analysis_redo//")
+#Import meanQ structure files
+#slist <-readQ(files= list.files(pattern="*_f"))
+#clumppExport(slist,useexe = T)
+#collectClumppOutput()
+admix_plot<-function(clump_align_tab,nrep,nind,k,axis,col_pal){
+  line_locs<-c(31,63,89,120,149,175,202,230,261)
+  clump_align_tab$V1<-NULL
+  clump_align_tab[,ncol(clump_align_tab)]<-NULL
+  #x<-split(clump_align_tab,sort(rep(seq(1:nrep),nind)))
+  #x<-lapply(x,as.matrix)
+  #z<-Reduce("+", x) / length(x)
+  z<-clump_align_tab
+  #col_pal<-col+pal
+  #col_pal<-brewer.pal(9,"Paired")
+  #cols<-col_pal#[1:ncol(z)]
+  barplot(t(z),col=col_pal,xlab="Admixture Proportions",ylab=NULL,
+          space= 0,border=NA,axisnames = F,horiz=T, main = paste0("K=",k),
+          cex.axis = 1.2, cex.names = 1.2,cex.lab=1.2,cex.main=1.5);abline(h=line_locs)
+  ifelse(axis == TRUE, axis(at=line_locs-15,labels=c("Hatfields Beach","Stanmore Bay 2015","Stanmore Bay","Browns Bay",
+                                "Opito Bay","Mt. Maunganui","M\u101hia","Wellington",
+                                "Kaik\u14dura"),side=2,tck=0,cex.axis=1.2,las=1), "Axis not displayed")
+}
+
+
+files<-list.files(pattern="*merged.txt",recursive=T)
+aligned_struc<-lapply(files,read.table)
+line_locs<-c(31,63,89,120,149,175,202,230,261)
+par(mfrow=c(1,5), mai =c (1,0.1,0.1,0.1),mgp=c(3,1,0),oma=c(1,10,1,1))
+library(RColorBrewer)
+col_pal<-brewer.pal(9,"Paired")
+cairo_pdf("D://Dropbox/Isopod Photos and Project/popgen_ms_submission/pop_gen_rev/MS_revised/fig3.pdf",width = 12,height=7,pointsize = 15)
+par(mfrow=c(1,5), mai =c (1,0.1,0.5,0.1),mgp=c(3,1,0),oma=c(1,10,1,1))
+admix_plot(aligned_struc[[1]],nrep=9,nind=261,k=2,axis=TRUE, col_pal[c(1,2)])
+admix_plot(aligned_struc[[2]],nrep=9,nind=261,k=3,axis=FALSE, col_pal[c(3,1,2)])
+admix_plot(aligned_struc[[3]],nrep=9,nind=261,k=4,axis=FALSE, col_pal[c(1,2,3,4)])
+admix_plot(aligned_struc[[4]],nrep=9,nind=261,k=5,axis=FALSE, col_pal[c(4,2,1,3,5)])
+admix_plot(aligned_struc[[5]],nrep=9,nind=261,k=6,axis=FALSE, col_pal[c(2,1,6,3,4,5)])
+dev.off()
+
+cairo_pdf("D://Dropbox/Dropbox/Isopod Photos and Project/popgen_ms_submission/pop_gen_rev/MS_revised/supp_fig3.pdf",width = 12,height=7,pointsize = 15)
+par(mfrow=c(1,5), mai =c (1,0.1,0.5,0.1),mgp=c(3,1,0),oma=c(1,10,1,1))
+admix_plot(aligned_struc[[6]],nrep=9,nind=261,k=7,axis=TRUE, col_pal[c(2,1,6,3,4,5,7)])
+admix_plot(aligned_struc[[7]],nrep=9,nind=261,k=8,axis=FALSE, col_pal[c(2,1,6,3,4,5,7,8)])
+admix_plot(aligned_struc[[8]],nrep=9,nind=261,k=9,axis=FALSE, col_pal[c(2,1,6,3,4,5,7,8,9)])
+dev.off()
+
+
+```
+Log liklihood plot
+```{r}
+log_lik_struc <- read.csv("./liklihood_var_k_structure.csv")
+pdf("./popgen_ms_submission/pop_gen_rev/MS_revised/supp_fig4.pdf",width=8,height=6)
+ plot(log_lik_struc$Mean.Ln.Liklihood-(0.5*log_lik_struc$Variance)~
+         log_lik_struc$K,pch=16,xlab="K",ylab="Penalized Mean Log Liklihood of K")
+dev.off()
+```
+
+
+Now we get into the migrate section - again much of this only needs to be run once, so i have hashed it out.
+```{r echo=FALSE}
+library(dartR)
+load("./data_pop_gen_analysis.rData")
+data_migrate<-gl.drop.pop(data_pop_gen_analysis,c("Stanmore Bay Old"),recalc = TRUE)
+rand_loc_drop<-sample(data_pop_gen_analysis$loc.names,7020)
+#gl.drop.ind(data_migrate,ind.list = "BBFA3")
+library(dartR)
+data_migrate_randsub<-gl.drop.loc(data_migrate,rand_loc_drop,verbose=0)
+data_migrate_randsub$other$ind.metrics$pop[data_migrate_randsub$other$ind.metrics$pop=="Hatfields Beach"] <- "StanHat"
+data_migrate_randsub$other$ind.metrics$pop[data_migrate_randsub$other$ind.metrics$pop=="StanmoreBay"] <- "StanHat"
+setwd("./BayesAss/BayesAss_2Sep/")
+radiator::genomic_converter(data_migrate_randsub,output="vcf", filename = "data_migr_ni_stanhat_1000loci")
+
+```
+
+For visualizing migration rates we can use the following
+
+
+```{r echo=FALSE}
+
+library(RColorBrewer)
+df0 <- read.csv("./bayesass_migration_tab.csv", stringsAsFactors=FALSE,
+                  head=F)
+df0_sd<-read.csv("./bayesass_migration_tab_sd.csv", stringsAsFactors=FALSE,
+                  head=F)
+df0$V3[6]<-"M\u101hia Peninsula"
+df0$V3[8]<-"Kaik\u14dura"
+df0$V3[2]<-"Stanmore Bay"
+df0$V3[1]<-"Hatfields Beach"
+df0$V3[7]<-"Wellington"
+df_diff<-df0[4:11]-df0_sd[4:11]
+df_diff[df_diff < 0.0005] <- NA
+mat<-as.matrix(ifelse(is.na(df_diff),FALSE,TRUE))
+mat1<-as.matrix(df0[4:11])
+temp<-as.data.frame(cbind(as.vector(as.matrix(mat)),as.vector(as.matrix(mat1))));colnames(temp)<-c("Bool","M")
+temp$sub<-(ifelse(temp$Bool==0,0,temp$M));temp$sub<-ifelse(temp$sub==1,0,temp$sub)
+matrix(temp$sub,nrow=8,ncol=8)
+df0[4:11]<-matrix(temp$sub,nrow=8,ncol=8)
+temp_mat<-df0[4:11]
+temp_mat<-t(temp_mat)#[, rev(seq_len(ncol(temp_mat)))])
+df0[4:11]<-temp_mat
+#df0[4:12]<-10^df0[4:12]
+#select and rename labels
+library("dplyr")
+df1 <- df0 %>% dplyr::select(1:3) %>% rename(order = V1, rgb = V2, region = V3) %>% mutate(region = gsub("_", " ", region))
+
+#flow matrix
+m <- as.matrix(df0[,-(1:3)])
+dimnames(m) <- list(orig = df1$region, dest = df1$region)
+#drop small flows
+#m[m<=quantile(m,0.02)]<-0
+
+#sort regions and create colours
+library("tidyr")
+df1 <- df1 %>% arrange(order) %>% separate(rgb, c("r","g","b")) %>% 
+  mutate(col = rgb(r, g, b, max=255), max = rowSums(m)+colSums(m))
+
+#plot using chordDiagram
+library("circlize")
+circos.clear()
+cols<-brewer.pal(9,"Paired")
+cols<-as.vector(rbind(cols[2],cols[8],cols[1],cols[6],cols[5],cols[4],cols[9],cols[3]))
+cairo_pdf("./Figures_thesis/migration_estimates.pdf")
+par(mar = c(1,1,1,1), cex=0.9)
+circos.par(start.degree = 90, gap.degree = 4,canvas.ylim=c(-1.2,1.2))
+chordDiagram(x = m, directional = 1, order = df1$region, 
+             grid.col = cols, annotationTrack = "grid", 
+             transparency = 0.25,  annotationTrackHeight = c(0.1, 0.1),
+             diffHeight  = -0.04)
+
+#add in labels and axis
+
+circos.trackPlotRegion(track.index = 1, panel.fun = function(x, y) {
+  xlim = get.cell.meta.data("xlim")
+  sector.index = get.cell.meta.data("sector.index")
+  circos.text(mean(xlim), 2.5, sector.index, facing = "bending",niceFacing = T)
+  circos.axis("top", major.at = seq(0, max(xlim),5), labels.away.percentage = 0.2, labels.niceFacing = T )
+}, bg.border = NA)
+
+#circos.clear()
+
+dev.off()
+
+
+```
+
+
+Estimates of dispersal distance using neutral loci
+
+```{r echo=FALSE}
+ne_north<-199069410# (mutation scaled effective population size)
+library(marmap)
+bat <- getNOAA.bathy(169.1, 178.776, -44, -33, res = 1, keep=TRUE) ## Bring in a bathymetric map to allow us to do some least cost path analaysis
+
+Hatfields<-c(-36.569330, 174.708932)
+StanmoreBay<-c(-36.597523, 174.738320)
+StanmoreBayOld<-c(-36.597523, 174.738321)
+BrownsBay<-c(-36.717101, 174.768741)
+OpitoBay<-c(-36.689997, 175.816381)
+MtMaunganui<-c(-37.613310, 176.160670)
+Mahia<-c(-39.074737, 177.933028)
+
+coords<-as.data.frame(rbind(StanmoreBayOld,Hatfields, BrownsBay,OpitoBay,
+                            MtMaunganui,Mahia,StanmoreBay))
+colnames(coords)<-c("y","x")
+sites<-coords[c(2,1)]
+rownames(sites)<-1:7
+# Convert to transition object
+trans1<-trans.mat(bat)
+
+trans2 <- trans.mat(bat, max.depth =-150,min.depth = -1)
+
+
+library(fossil);library(raster);library(hierfstat)
+
+dist2 <- lc.dist(trans2, sites, res = "path")
+dist3 <- lc.dist(trans2, sites, res = "dist")
+dist_mat<-as.matrix(dist3)
+dist_mat[upper.tri(dist_mat,diag = T)] <- NA
+library(dartR)
+load("./data_pop_gen_analysis.rData")
+data_pop_gen_analysis_ni<-gl.drop.pop(data_hwe,c("Worser Bay","Kaikoura"),recalc = T)
+
+library(StAMPP)
+pwfst <-stamppFst(data_pop_gen_analysis_ni, nboots=100, percent=95, nclusters=3)
+fst_mat<-as.matrix(round(pwfst$Fsts,3)) ## Gives us the Fst matrix 
+fst_mat_slat<-fst_mat/(1-fst_mat)
+dist_lr<-lm(as.vector(fst_mat_slat)~as.vector(dist_mat))
+summary(dist_lr)
+
+fst_slope<-dist_lr$coefficients[2]
+ne_north<-199069410/4
+dist_hat_mah<-dist_mat[6,2]
+density_est<-ne_north/dist_hat_mah
+disp<-1/(2*(sqrt(density_est))*(sqrt(fst_slope)))
+disp
+
+(disp-0.2*disp)/((2*(2.8E-9))^0.5)
+```
+
+
+Doing the amova
+
+```{r echo=FALSE}
+gbs_metadata<-data_pop_gen_analysis$other$ind.metrics
+met<-read.csv("./metadata.csv")
+ind_data<-read.csv("isopod_morph_index.csv")
+gbs_metadata$region<-met$region[match(gbs_metadata$id,met$id)]
+gbs_metadata$morph<-ind_data$Morph[match(gbs_metadata$id,ind_data$Code)]
+
+gbs_metadata$locality<-met$locality[match(gbs_metadata$id,met$id)]
+data_pop_gen_analysis$other$ind.metrics<-gbs_metadata
+strata(data_pop_gen_analysis)<-gbs_metadata[c(6,8,2,7)]
+library(poppr)
+data_amova<-poppr.amova(data_pop_gen_analysis, hier = ~region/pop/morph)
+randtest_res<-randtest(data_amova,nrepet=1000)
+
+
+library(dartR)
+northsec<-gl.drop.pop(data_pop_gen_analysis,c("Kaikoura","Worser Bay"))
+northsec_met<-northsec$other$ind.metrics
+met<-read.csv("./metadata.csv")
+northsec_met$region<-met$region[match(northsec_met$id,met$id)]
+northsec_met$locality<-met$locality[match(northsec_met$id,met$id)]
+northsec$other$ind.metrics<-northsec_met
+
+poppr.amova(northsec, hier = ~locality/pop)
+```
+
+
+
+Now we're working on looking at the colouration work
+I've already made a file containing morph and ID for each individual
+```{r echo=FALSE}
+bs_pca_plot<-function(eigenvect,genlightobject,pc1,pc2){
+  pca.scores<-as.data.frame(eigenvect$eigenvect)
+  pca.scores$pop <- pop(genlightobject)
+  cols <- brewer.pal(n = nPop(genlightobject), name = "BrBG")
+  df<-as.data.frame(cbind(pca.scores[,pc1],pca.scores[,pc2]))
+  df$Population<-pca.scores$pop
+  colnames(df)<-c("PCX","PCY","Morph")
+  p <- ggplot(df, aes(x=df$PCX, y=PCY, colour=Morph))
+  p <- p + geom_point(size=3)
+  x<-signif(eigenvect$varprop[pc1],3)*100
+  y<-signif(eigenvect$varprop[pc2],3)*100
+  p <- p + xlab(paste(paste0("PC",pc1),paste0("(",x,"%"), "of variance explained)",sep=" "))
+  p <- p + ylab(paste(paste0("PC",pc2),paste0("(",y,"%"), "of variance explained)",sep=" "))
+  p <- p + geom_hline(yintercept = 0) 
+  p <- p + geom_vline(xintercept = 0) 
+  p <- p + scale_color_brewer(palette = "Paired")
+  p <- p + theme_bw()
+  p <- p + theme(axis.text = element_text(size = 12))
+  p <- p + theme(axis.title = element_text(size=14))
+  p <- p + theme(legend.text = element_text(size = 12))
+  p <- p + theme(legend.title = element_text(size = 14))
+ # p <- p + stat_ellipse(level= 0.95,size=1)
+  #p <- p + theme(plot.margin = margin(2,.8,2,.8,"cm"))
+  p
+}
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+library(gridExtra)
+
+ind_data<-read.csv("./colouration_analysis/colouration_morph_data.csv",stringsAsFactors = F)
+dropped_ind<-(ind_data$Code[ind_data$Retain=="FALSE"])
+library(dartR)
+colour_data <- gl.read.dart(filename = ".//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                             ind.metafile = ".//metadata.csv", probar = TRUE)
+colour_data<-gl.drop.pop(colour_data,pop.list=c("Opito Bay","Kaikoura","Worser Bay","Mahia Peninsula",
+                                                "Mt Maunganui"),recalc=TRUE)
+colour_data<-gl.drop.ind(colour_data,dropped_ind,recalc = TRUE)
+
+
+morph<-as.data.frame(colour_data$other$ind.metrics$id)
+morph$morph<-ind_data$Morph[match(morph$`colour_data$other$ind.metrics$id`,ind_data$Code)]
+colour_data$other$ind.metrics$pop<-morph$morph
+colour_data$pop<-as.factor(morph$morph)
+
+
+
+colour_data<-gl.filter.callrate(colour_data,threshold = 0.8)
+colour_data<-gl.filter.rdepth(colour_data,lower = 3, upper = 500)
+colour_data<-gl.filter.repavg(colour_data,threshold=0.95)
+colour_data<-gl.filter.monomorphs(colour_data)
+colour_data<-gl.filter.secondaries(colour_data,method = "best")
+
+
+#x_col<-gl2gi(colour_data)
+#x_col<-hierfstat::genind2hierfstat(x_col)
+x_col_loci<-colour_data$loc.names
+#hierfstat::write.bayescan(x_col,fn="./BayeScan/hierfstat + BSOUTPUT/colouration_data_23_2jul.txt")
+### BayeScan analysis is done with pr_odds of 100
+bayescan_col_qvalues<-read.table("./colouration_analysis/colouration_data_23_2jul_fst.txt")
+bayescan_col_qvalues$loci<-x_col_loci
+bayescan_col_droppedloc<-bayescan_col_qvalues[bayescan_col_qvalues$qval >= 0.05,]
+bayescan_col_dropped<-gl.drop.loc(colour_data,loc.list = bayescan_col_droppedloc$loci,verbose=0)
+#bs_pca_plot()
+
+
+snp_rel_col<-gl2gds(bayescan_col_dropped,outfile="snp_rel_col17.gds",outpath="D://Dropbox///Dropbox/Isopod Photos and Project/")
+#genomic_converter(col_data_selec,output="snprelate")
+library(SNPRelate);library(ggplot2);library(RColorBrewer);library(vegan)
+snp_rel_col<-snpgdsOpen(".//snp_rel_col17.gds")
+x<-snpgdsPCA(snp_rel_col)
+bayescan_pc1v2<-bs_pca_plot(x,bayescan_col_dropped,1,2)
+bayescan_pc2v3<-bs_pca_plot(x,bayescan_col_dropped,2,3)
+
+km     <- kmeans(x$eigenvect[,c(2,3)], centers=4, nstart=10)
+ggdata <- data.frame(x$eigenvect, Cluster=km$cluster, Morph=bayescan_col_dropped$pop)
+adonis(ggdata[c(1,2)]~ggdata$Morph,method="eu")
+ggplot(ggdata) +
+    geom_point(aes(x=X1, y=X2, color=factor(Morph)), size=5, shape=20) +
+    stat_ellipse(aes(x=X1,y=X2,fill=factor(Morph)),
+                 geom="polygon", level=0.95, alpha=0.2) +
+    guides(color=guide_legend("Morph"),fill=guide_legend("Morph"))
+
+ggsave("C://Users/wpear/Dropbox/Isopod Photos and Project/Figures_thesis/bayescan_pcaplots.pdf",grid.arrange(arrangeGrob(bayescan_pc1v2 + theme(legend.position="none"), bayescan_pc2v3 + theme(legend.position="none"), nrow=2 ), g_legend(bayescan_pc2v3),nrow=1, widths=c(3,1.5,0.1)),device = cairo_pdf)
+
+snpgdsClose(snp_rel_col)
+
+########### Random col analysis ####
+set.seed(321)
+bayescan_test_rand<-colour_data
+bayescan_test_rand$pop<-sample(bayescan_test_rand$pop)
+
+x_col2<-gl2gi(bayescan_test_rand)
+x_col2<-hierfstat::genind2hierfstat(x_col2)
+x_col_loci2<-bayescan_test_rand$loc.names
+#hierfstat::write.bayescan(x_col2,fn="./BayeScan/hierfstat + BSOUTPUT/colouration_data_randtest_4Aug.txt")
+col_rand_bs<-read.table(".//BayeScan/hierfstat + BSOUTPUT/colouration_data_randtest_4Aug_fst.txt")
+col_rand_bs$loci<-x_col_loci2
+#Remove loci with Q-Values > 0.05
+bs_dropped_col_rand<-col_rand_bs[col_rand_bs$qval >= 0.1,]
+col_rand_dropped<-gl.drop.loc(bayescan_test_rand,loc.list = bs_dropped_col_rand$loci,verbose=0)
+library(SNPRelate)
+snp_rel_col<-gl2gds(col_rand_dropped,outfile="snp_rel_col17.gds",outpath="C://Users/wpear//Dropbox/Isopod Photos and Project/")
+#genomic_converter(col_data_selec,output="snprelate")
+snp_rel_col<-snpgdsOpen(".//snp_rel_col17.gds")
+x<-snpgdsPCA(snp_rel_col)
+snpgdsClose(snp_rel_col)
+bayescanrand_pc1v2<-bs_pca_plot(x,col_rand_dropped,1,2)
+
+ggsave("C://Users/wpear/Dropbox/Isopod Photos and Project/Figures_thesis/bayescanrand_pc1v2.pdf",bayescanrand_pc1v2,device = cairo_pdf)
+
+
+```
+
+```{r echo=FALSE}
+library(dartR);library(RColorBrewer)
+gwas_loci<-c("13991447-6-G/A","14004074-28-T/A","14003583-24-G/C","13987455-33-A/C")
+loci_drop<-x_col_loci[!x_col_loci %in% gwas_loci]
+gwas_genlight<-gl.drop.loc(colour_data,loci_drop,verbose=0)
+
+snp_rel_col2<-gl2gds(gwas_genlight,outfile="snp_rel_col21.gds",outpath="D://Dropbox///Dropbox/Isopod Photos and Project/")
+#genomic_converter(col_data_selec,output="snprelate")
+library(SNPRelate)
+snp_rel_col2<-snpgdsOpen(".//snp_rel_col21.gds")
+x<-snpgdsPCA(snp_rel_col2)
+plink1v2<-bs_pca_plot(x,gwas_genlight,1,2)
+km     <- kmeans(x$eigenvect[,c(2,3)], centers=4, nstart=5)
+ggdata <- data.frame(x$eigenvect, Cluster=km$cluster, Morph=bayescan_col_dropped$pop)
+adonis(ggdata[c(1,2)]~ggdata$Morph,method="eu")
+ggplot(ggdata) +
+    geom_point(aes(x=X1, y=X2, color=factor(Morph)), size=5, shape=20) +
+    stat_ellipse(aes(x=X1,y=X2,fill=factor(Morph)),
+                 geom="polygon", level=0.95, alpha=0.2) +
+    guides(color=guide_legend("Morph"),fill=guide_legend("Morph"))
+
+ggsave("C://Users/wpear/Dropbox/Isopod Photos and Project/Figures_thesis/plink1v2.pdf",plink1v2,device = cairo_pdf)
+snpgdsClose(snp_rel_col)
+```
+
+all significant snps
+
+```{r echo=FALSE}
+library(dartR);library(RColorBrewer)
+signsnp<-c("13991447-6-G/A","14004074-28-T/A","14003583-24-G/C","13987455-33-A/C","13996259-12-A/G",
+           "44796519-19-C/A","13996433-20-C/T","13986227-21-T/G")
+loci_drop<-x_col_loci[!x_col_loci %in% signsnp]
+gwas_genlight<-gl.drop.loc(colour_data,loci_drop,verbose=0)
+
+snp_rel_col<-gl2gds(gwas_genlight,outfile="snp_rel_col17.gds",outpath="C://Users/wpear//Dropbox/Isopod Photos and Project/")
+#genomic_converter(col_data_selec,output="snprelate")
+library(SNPRelate)
+snp_rel_col<-snpgdsOpen(".//snp_rel_col17.gds")
+x<-snpgdsPCA(snp_rel_col)
+library(ggplot2)
+bs_pca_plot(x,gwas_genlight,2,3)
+
+snpgdsClose(snp_rel_col)
+```
+
+
+Here we look at identifying snps for each sex.
+
+```{r echo=FALSE}
+library(dartR)
+sex <- gl.read.dart(filename = ".//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                             ind.metafile = ".//metadata.csv", probar = TRUE)
+sex_pop <-gl.drop.pop(sex,pop.list=c("Opito Bay","Kaikoura","Worser Bay","Mahia Peninsula",
+                                                "Mt Maunganui"),recalc=F)
+
+sex_pop$pop<-sex_pop$other$ind.metrics$sex
+
+
+
+
+sex_pop<-gl.filter.monomorphs(sex_pop)
+sex_pop<-gl.filter.secondaries(sex_pop,method = "best")
+sex_pop<-gl.drop.ind(sex_pop,"BBFA3")
+
+
+
+# At this point we upload the bayescan datafile to GRU and run bayescan on it
+### bayescan command is: ./BayeScan2.1/binaries/BayeScan2.1_linux64bits ./data.txt ./bayescan_analysis2 --threads 22
+library(hierfstat)
+x<-gl2gi(sex_pop)
+x<-genind2hierfstat(x)
+x_loci<-sex_pop$loc.names
+#write.bayescan(x,fn="./BayeScan/hierfstat + BSOUTPUT/sex_bayescan.txt")
+bs_sex_res<-read.table("./BayeScan/hierfstat + BSOUTPUT/sex_bayescan_fst.txt")
+bs_sex_res$loci<-x_loci
+#Remove loci with Q-Values < 0.05
+bs_dropped<-bs_sex_res[bs_sex_res$qval >= 0.1,]
+sex_pop_dropped<-gl.drop.loc(sex_pop,loc.list = bs_dropped$loci,v=0)
+ 
+
+snp_rel_col<-gl2gds(sex_pop_dropped,outfile="snp_rel_col51.gds",outpath="C://Users/wpear//Dropbox/Isopod Photos and Project/")
+#genomic_converter(col_data_selec,output="snprelate")
+library(SNPRelate)
+snp_rel_col<-snpgdsOpen(".//snp_rel_col51.gds")
+x<-snpgdsPCA(snp_rel_col)
+snpgdsClose(snp_rel_col)
+plot(x,1:2,col= sex_pop_dropped$pop,pch=16)
+y<-as.data.frame(x$eigenvect)
+library(ggplot2)
+qplot(y$V1,y$V2,col=as.factor(sex_pop_dropped$pop)) + geom_point(size=3) + 
+   xlab("PC1") + ylab("PC2") +  scale_color_brewer(palette = "Paired") 
+
+```
+
+Identifying ZW SNPs
+```{r}
+library(dartR)
+sex <- gl.read.dart(filename = ".//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                             ind.metafile = ".//metadata.csv", probar = TRUE)
+sex_pop <-gl.drop.pop(sex,pop.list=c("Opito Bay","Kaikoura","Worser Bay","Mahia Peninsula",
+                                                "Mt Maunganui"),recalc=TRUE)
+
+sex_pop$pop<-sex_pop$other$ind.metrics$sex
+
+
+
+
+sex_pop<-gl.filter.monomorphs(sex_pop)
+sex_pop<-gl.filter.secondaries(sex_pop,method = "best")
+sex_pop<-gl.drop.ind(sex_pop,"BBFA3")
+sex_pop$other$ind.metrics$pop<-sex_pop$other$ind.metrics$sex
+sex_pop$pop<-as.factor(sex_pop$other$ind.metrics$sex)
+
+sex_pop_male<-gl.drop.pop(sex_pop,pop.list=c("Female"),recalc=TRUE)
+sex_pop_female<-gl.drop.pop(sex_pop,pop.list=c("Male"),recalc=TRUE)
+
+
+
+
+
+radiator::genomic_converter(sex_pop_male,out="vcf")
+radiator::genomic_converter(sex_pop_female,out="vcf")
+
+
+```
+
+
+
+
+
+```{r echo=FALSE}
+library(related);library(radiator)
+
+prep_coan_data<-function(genlight,population){
+  otherpop<-as.character(unique(data_hwe$pop))
+  popdrop<-otherpop[otherpop != population]
+  x<-gl.drop.pop(genlight,popdrop)
+  radiator::genomic_converter(x,output="related")
+}
+#prep_coan_data(data_hwe,"StanmoreBay")
+#prep_coan_data(data_hwe,"Stanmore Bay Old")
+#prep_coan_data(data_hwe,"Kaikoura")
+#prep_coan_data(data_hwe,"Mahia Peninsula")
+#prep_coan_data(data_hwe,"Mt Maunganui")
+#prep_coan_data(data_hwe,"Worser Bay")
+#prep_coan_data(data_hwe,"Browns Bay")
+#prep_coan_data(data_hwe,"Hatfields Beach")
+#prep_coan_data(data_hwe,"Opito Bay")
+
+stanmore_old<-readgenotypedata("./stanmorebay_2015_related/radiator_data_20191025@1400_related.txt")
+stanmore_old<-coancestry(stanmore_old$gdata,
+                         trioml=2)
+mean(stanmore_old$relatedness$trioml);sd(stanmore_old$relatedness$trioml)
+stanmore_new<-readgenotypedata("./stanmorebay_2018_related/radiator_data_20191025@1302_related.txt")
+stanmore_new<-coancestry(stanmore_new$gdata,
+                         trioml=2)
+mean(stanmore_new$relatedness$trioml);sd(stanmore_new$relatedness$trioml)
+mahia_rel<-readgenotypedata("./mahia_2018_related/radiator_data_20191025@1414_related.txt")
+mahia_rel<-coancestry(mahia_rel$gdata,
+                         trioml=2)
+mean(mahia_rel$relatedness$trioml);sd(mahia_rel$relatedness$trioml)
+
+opito_rel<-readgenotypedata("./opito_2018_related/radiator_data_20191025@1443_related.txt")
+opito_rel<-coancestry(opito_rel$gdata,
+                         trioml=2)
+mean(opito_rel$relatedness$trioml);sd(opito_rel$relatedness$trioml)
+
+tauranga_rel<-readgenotypedata("./tauranga_2018_related/radiator_data_20191025@1420_related.txt")
+tauranga_rel<-coancestry(tauranga_rel$gdata,
+                         trioml=2)
+mean(tauranga_rel$relatedness$trioml);sd(tauranga_rel$relatedness$trioml)
+kaikoura_rel<-readgenotypedata("./kaikoura_2015_related/radiator_data_20191025@1408_related.txt")
+kaikoura_rel<-coancestry(kaikoura_rel$gdata,
+                         trioml=2)
+mean(kaikoura_rel$relatedness$trioml);sd(kaikoura_rel$relatedness$trioml)
+wellington_rel<-readgenotypedata("./wellington_2018_related/radiator_data_20191025@1425_related.txt")
+wellington_rel<-coancestry(wellington_rel$gdata,
+                         trioml=2)
+mean(wellington_rel$relatedness$trioml);sd(wellington_rel$relatedness$trioml)
+bbay_rel<-readgenotypedata("./brownsbay_2018_related/radiator_data_20191025@1431_related.txt")
+bbay_rel<-coancestry(bbay_rel$gdata,
+                         trioml=2)
+mean(bbay_rel$relatedness$trioml);sd(bbay_rel$relatedness$trioml)
+
+hatfield_rel<-readgenotypedata("./hatfields_2015_related/radiator_data_20191025@1436_related.txt")
+hatfield_rel<-coancestry(hatfield_rel$gdata,
+                         trioml=2)
+mean(hatfield_rel$relatedness$trioml);sd(hatfield_rel$relatedness$trioml)
+```
+```{r echo=FALSE}
+library(dartR)
+colour_data <- gl.read.dart(filename = ".//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                             ind.metafile = ".//metadata.csv", probar = TRUE)
+colour_data<-gl.drop.pop(colour_data,pop.list=c("Opito Bay","Kaikoura",
+                                                "Mt Maunganui","Browns Bay","Hatfields Beach","StanmoreBay",
+                                                "Stanmore Bay Old", "Worser Bay"),recalc=TRUE)
+
+
+
+
+radiator::genomic_converter(colour_data,out="vcf")
+```
+qPCR plot
+```{r echo=FALSE}
+x<-read.csv("C:/Users/wpear/Dropbox/Isopod Photos and Project/qpcr_rfu_cycles.csv")
+#colnames(x)
+x$Channel<-NULL
+x$Temp<-NULL
+library(reshape2)
+library(ggplot2)
+df<-melt(x,id.vars="Cycle",variable.name = "RFU")
+df$Sample<-stringr::word(df$RFU,1,sep="_")
+df$SampleID<-ifelse(df$Sample=="R2O","Sample 1, Whole DNA",ifelse(df$Sample=="R2W","Sample 1, MDA DNA",
+                                                                         ifelse(df$Sample=="R3O","Sample 2, Whole DNA",
+                                                                                "Sample 2, MDA DNA")))
+df$SampleID2<-paste(df$SampleID,stringr::word(df$RFU,2,sep="_"))
+df$SampleGroup<-substr(df$RFU,start=1,stop=2)
+df$Dilution<-stringr::word(df$SampleID2,4,5,sep=" ")
+y<-as.data.frame(cbind(c("D1","D2","D3","D4","D5","D6","D7","D8"),
+                       c("Negative Control","10-fold","100-fold","1000-fold","1x10^4-fold","1x10^5-fold",
+                         "1x10^6-fold","1x10^7-fold")))
+df$DilutionFactor<-y$V2[match(stringr::word(df$Dilution,2),y$V1)]
+df<-df[df$DilutionFactor !="1x10^7-fold",]# | df$DilutionFactor != "1x10^6-fold",]
+df<-df[df$DilutionFactor !="1x10^6-fold",]
+qpcr_plot<-ggplot(df, aes(Cycle,value)) + geom_line(aes(group=RFU,colour=DilutionFactor),size=1.4) +
+  ylab("RFU") + facet_wrap(~SampleID,ncol=2) + scale_color_brewer(palette="Paired")
+
+
+ggsave("C://Users/wpear/Dropbox/Isopod Photos and Project/Figures_thesis/qpcr_plot.pdf",qpcr_plot,device = cairo_pdf)
+
+```
+
+```{r echo=FALSE}
+gcskew<-read.delim("./GCSkew_info.txt",head=F)
+plot(gcskew$V3~gcskew$V1,type="l",xlab="Position",ylab="Cumulative GC Skew");abline(v=14197,lty=2)
+```
+```{r echo=FALSE}
+#############################
+setwd("C://Users/wpear/Dropbox/Isopod Photos and Project/")
+sigDat<-read.csv("./sigdat_cytb.txt")
+sigDat<-sigDat[sigDat$Position >=8750 & sigDat$Position <= 13500,]
+library("ggplot2")
+p <- ggplot(sigDat) +
+  #  geom_vline(aes(xintercept=Position),
+  #            data=vlineDat, color='red', size=5) +
+  geom_path(aes(x=Position, y=Signal), size=0.3) +
+  theme_bw() +
+  theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=18)) +
+  xlab('Position') + ylim(-6,5) + scale_x_continuous(limits=c(8750,13500)) 
+p
+#if(! is.null(hDat)){
+#  hDat$Position <- hDat$Position / 1000
+#  p <- p + geom_point(aes(x=Position, y=Signal),
+#                      data=hDat, color='red', size=2)
+
+
+sigDat16s<-read.csv("./sigdat_16s.txt")
+sigDat16s<-sigDat16s[sigDat16s$Position >=25000 & sigDat16s$Position <= 28000,]
+library("ggplot2")
+p16 <- ggplot(sigDat16s) +
+  #  geom_vline(aes(xintercept=Position),
+  #            data=vlineDat, color='red', size=5) +
+  geom_path(aes(x=Position, y=Signal), size=0.3) +
+  theme_bw() +
+  theme(axis.text=element_text(size=16),
+        axis.title=element_text(size=18)) +
+  xlab('Position') + ylim(-6,5) + scale_x_continuous(limits=c(25000,28000)) 
+p16
+#if(! is.null(hDat)){
+#  hDat$Position <- hDat$Position / 1000
+#  p <- p + geom_point(aes(x=Position, y=Signal),
+#                      data=hDat, color='red', size=2)
+
+############################
+```
+
+```{r}
+cytb_reads<-read.delim("/scratch/william/nanopore_cytbreads.txt",head=F)
+mitoreads<-read.table("/data/William/isopod_genomic_data/mitoreadnames.txt",stringsAsFactors = F)
+mitoreads<-as.data.frame(substring(mitoreads$V1,2));colnames(mitoreads)<-"V1"
+invertcount<-read.table("/data/William/isopod_genomic_data/alldata_inverseinfo.txt",head=F,
+                        stringsAsFactors = T,fill=T)
+x<-c("length", "kRat", "cntRep", "cntTot", "medCt", "RCMed", "medGap", "modCt",
+     "RCMod", "modGap", "rvCnt", "rcCnt", "SeqID")
+invertcount<-invertcount[1:13]
+colnames(invertcount)<-x
+invertcount$rcCnt<-as.numeric(as.character(invertcount$rcCnt))
+
+lig1<-read.table("/data/nanopore_2019/2019-06-07_william_isopod_ligation/basecalled/sequencing_summary.txt",
+                 head=T)
+lig2<-read.table("/data/nanopore_2019/2019-06-07_william_isopod_ligationr2/rebasecalled_15_7_2019/sequencing_summary.txt",
+                 head=T)
+rapd1<-read.table("/data/nanopore_2019/20May19_william_isopod_bbfd2_run2/rebasecalled_15_7_2019/sequencing_summary.txt",
+                  head=T)
+summaries<-rbind(lig1,lig2,rapd1)
+summaries$read_id<-as.character(summaries$read_id)
+summaries$speed<-summaries$sequence_length_template/summaries$duration
+rand_reads<-summaries[summaries$read_id %in% sample(summaries$read_id,10000),]
+
+mitosum<-summaries[summaries$read_id %in% as.character(mitoreads$V1),]
+mitosum$rccount<-invertcount$rcCnt[match(as.character(mitosum$read_id),as.character(invertcount$SeqID))]
+
+mito_invert_not_cytb<-mito_sum[!mito_sum$read_id %in% cytb_reads$V1,]
+pdf("/data/William/seq_speeds.pdf",width = 15)
+par(mfrow=c(1,2),cex=2)
+hist(mitosum$speed[mitosum$rccount > 10],breaks=50,probability = T,xlim=c(200,500),
+     xlab= "Sequencing Speed (Events/second)",main=NULL)
+lines(density(mitosum$speed[mitosum$rccount > 10]))
+hist(rand_reads$speed,breaks=50,probability = T,xlim=c(200,500),xlab= "Sequencing Speed (Events/second)",
+     main=NULL)
+lines(density(rand_reads$speed))
+dev.off()
+ks.test(rand_reads$speed,mitosum$speed[mitosum$rccount > 10])
+
+ecdf1<-ecdf(rand_reads$speed)
+ecdf2<-ecdf(mitosum$speed[mitosum$rccount > 10])
+plot(ecdf1, verticals=TRUE, do.points=FALSE, col="blue") 
+plot(ecdf2, verticals=TRUE, do.points=FALSE, col="green", add=TRUE) 
+## alternatine, use standard R plot of ecdf 
+#plot(f.a, col="blue") 
+#lines(f.b, col="green") 
+
+points(c(x0, x0), c(y0, y1), pch=16, col="red") 
+segments(x0, y0, x0, y1, col="red", lty="dotted") 
+```
+
+```{r echo=FALSE}
+dat<-read.delim("D://Dropbox/Dropbox/Isopod Photos and Project/dottup1.dat",head=F)
+plot(dat$V5,dat$V3,xlab=("Position in First Half"),ylab=("Position in Second Half"),pch=20,col="black",abline(1,1),ylim=c(0,14500),
+     xlim=c(0,14500))
+```
+
+Now we repeat the analyses for pop gen as above, but for ONLY loci with low MAC.
+
+```{r echo=FALSE}
+library(dartR)
+data <- gl.read.dart(filename = ".//Report-DIsoc19-4130/Report_DIsoc19-4130_1_moreOrders_SNP_mapping_2.csv", 
+                             ind.metafile = "./metadata.csv", probar = TRUE)
+### Population genomic SNP filtering - each set consists of identify SNPs suitable for population genetic inference 
+### This is first done by separating the data into the old and new data sets (william_data and sarah_data)
+### Once this is done, we apply the filters and extract a list of loci shared between both datasets.
+### Then we return to the original data and remove all loci except those that were shared between datasets. 
+### Then we repeat the filtering on this new dataset to make sure all the filters are still applied accross the data
+### and BAM now we have data that is almost ready for population genomic analyses that involves comparing both datasets.
+### We now have to apply a q-value filter to remove loci under selection - thats in the next section
+william_data1<-gl.drop.pop(data,c("Stanmore Bay Old","Kaikoura","Hatfields Beach"),recalc = TRUE)
+william_data<-gl.drop.ind(william_data1,ind.list = "BBFA3", recalc = TRUE)
+william_data<-gl.filter.callrate(william_data,threshold = 0.8,method="loc")
+william_data<-gl.filter.rdepth(william_data,lower = 3, upper = 50)
+william_data<-gl.filter.repavg(william_data,threshold=0.95)
+william_data<-gl.filter.monomorphs(william_data)
+william_data<-gl.filter.secondaries(william_data,method="best")
+
+
+sarah_data1<-gl.drop.pop(data,c("StanmoreBay","Opito Bay","Browns Bay","Mahia Peninsula","Mt Maunganui","Worser Bay"),recalc = TRUE)
+
+sarah_data<-gl.filter.callrate(sarah_data1,threshold = 0.8,method = "loc")
+sarah_data<-gl.filter.rdepth(sarah_data,lower = 3, upper = 50)
+sarah_data<-gl.filter.repavg(sarah_data,threshold=0.95)
+sarah_data<-gl.filter.monomorphs(sarah_data)
+sarah_data<-gl.filter.secondaries(sarah_data,method="best")
+
+
+shared_snps<-(intersect(sarah_data$loc.names,william_data$loc.names))
+non_shared_snps<-data$loc.names[! data$loc.names %in% shared_snps]
+overlapped_data<-gl.drop.loc(data,loc.list  = non_shared_snps)
+
+
+# At this point we upload the bayescan datafile to GRU and run bayescan on it
+### bayescan command is: ./BayeScan2.1/binaries/BayeScan2.1_linux64bits ./data.txt ./bayescan_analysis2 --threads 22
+#library(hierfstat)
+#x<-gl2gi(overlapped_data)
+#x<-genind2hierfstat(x)
+#x_loci<-overlapped_data$loc.names
+#write.bayescan(x,fn="./Isopod Photos and Project/BayeScan/hierfstat + BSOUTPUT/data.txt")
+
+
+#####
+#bayescan_qvalues<-read.table("./Isopod Photos and Project/BayeScan/hierfstat + BSOUTPUT/data_fst.txt")
+#bayescan_qvalues$loci<-x_loci
+#Remove loci with Q-Values < 0.05
+#bayescan_dropped<-bayescan_qvalues[bayescan_qvalues$qval <= 0.05,]
+#mixed_data<-gl.drop.loc(overlapped_data,loc.list = bayescan_dropped$loci)
+
+mixed_data<-gl.drop.ind(overlapped_data,ind.list = "BBFA3", recalc = TRUE)
+
+mixed_data<-gl.filter.callrate(mixed_data,threshold = 0.9,method="loc", recalc = T)
+mixed_data<-gl.filter.rdepth(mixed_data,lower = 3, upper = 50)
+mixed_data<-gl.filter.repavg(mixed_data,threshold=0.95)
+
+mixed_data<-gl.filter.monomorphs(mixed_data)
+mixed_data<-gl.filter.secondaries(mixed_data,method="best")
+
+ 
+#library(radiator)
+#keep_loc<-unique(as.character(mac_filt$LOCUS))
+#keep_loc<-sub("_([^_]*)$", "/\\1", keep_loc)
+#keep_loc<-gsub("_","-",keep_loc)
+
+obshet<-gl2gi(mixed_data)
+library(hierfstat)
+obshet<-basic.stats(obshet)
+obshet<-as.data.frame(cbind(obshet$perloc$Ho,rownames(obshet$perloc)))
+obshet$V1<-as.numeric(as.character(obshet$V1))
+obshet<-as.character(obshet$V2[obshet$V1>0.5])
+obshet<-gsub("\\.","-",obshet)
+obshet<-gsub("X","",obshet)
+obshet<-sub("-([^-]*)$", "/\\1", obshet)
+data_pop_gen_analysis_mac<-gl.drop.loc(mixed_data,obshet)
+
+library(radiator)
+mixed_data_tidygl<-tidy_genlight(data = data_pop_gen_analysis_mac, tidy = TRUE, gds = FALSE)
+mac_filt<-filter_mac(data = mixed_data_tidygl, interactive.filter = FALSE, filter.mac = 10)
+keep_loc<-unique(as.character(mac_filt$LOCUS))
+keep_loc<-sub("_([^_]*)$", "/\\1", keep_loc)
+keep_loc<-gsub("_","-",keep_loc)
+gone_loc<-setdiff(mixed_data$loc.names,keep_loc)
+gone_loc<-mixed_data$loc.names[!mixed_data$loc.names %in% gone_loc]
+mixed_data<-gl.drop.loc(mixed_data,gone_loc,verbose = 0)
+```
+
+```{r echo=FALSE}
+library(dartR)
+library(hierfstat)
+filt_data_gi<-gl2gi(mixed_data,verbose=0, probar=F)
+x<-basic.stats(filt_data_gi)
+fis<-x$Fis
+
+colMeans(x$Fis,na.rm=TRUE) ## Gives mean by population of Ho
+colMeans(x$Hs) ## Gives mean by population of He
+colMeans(x$Ho) ## Gives mean by population of Ho
+
+library(StAMPP)
+pwfst <-stamppFst(mixed_data, nboots=1000, percent=95, nclusters=3)
+fst_mat<-as.matrix(round(pwfst$Fsts,3)) ## Gives us the Fst matrix 
+View(fst_mat)
+library(phangorn)
+plot(upgma(fst_mat))
+
+```
+
+
+Now we're going to work out the PCA analyses
+
+```{r echo=FALSE}
+library(RColorBrewer);library(ggplot2)
+glPca.plot<-function(glPca_object,genlightobject,PrinX,PrinY){
+  #PrinX<-as.integer(PrinX)
+  #PrinY<-as.integer(PrinY)
+  pca.scores<-as.data.frame(glPca_object$scores)
+  pca.scores$pop <- pop(genlightobject)
+  cols <- brewer.pal(n = nPop(genlightobject), name = "BrBG")
+  df<-as.data.frame(cbind(pca.scores[,PrinX],pca.scores[,PrinY]))
+  df$Population<-pca.scores$pop
+  colnames(df)<-c("PCX","PCY","Population")
+  p <- ggplot(df, aes(x=df$PCX, y=PCY, colour=Population))
+  p <- p + geom_point(size=2)
+  var_frac <- glPca_object$eig/sum(glPca_object$eig)
+  x<-signif(sum(dplyr::nth(var_frac,PrinX)) * 100, 3)
+  y<-signif(sum(dplyr::nth(var_frac,PrinY)) * 100, 3)
+  p <- p + xlab(paste(paste0("PC",PrinX),paste0("(",x,"%"), "of variance explained)",sep=" "))
+  p <- p + ylab(paste(paste0("PC",PrinY),paste0("(",y,"%"), "of variance explained)",sep=" "))
+  p <- p + geom_hline(yintercept = 0) 
+  p <- p + geom_vline(xintercept = 0) 
+  p <- p + theme_bw()
+  p <- p + theme(axis.text = element_text(size = 12))
+  p <- p + theme(axis.title = element_text(size=14))
+  p <- p + theme(legend.text = element_text(size = 12))
+  p <- p + theme(legend.title = element_text(size = 14))
+  #p <- p + theme(plot.margin = margin(2,.8,2,.8,"cm"))
+  p  + scale_color_manual(labels = c("Hatfields Beach", "Stanmore Bay 2015","Stanmore Bay",
+                                     "Browns Bay", "Opito Bay","Mt Maunganui","M\u101hia Peninsula",
+                                     "Worser Bay", "Kaik\u14dura"),values=brewer.pal(9,"Paired"))
+}
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+y<-glPca(mixed_data,nf=4)
+pc1_pc2<-glPca.plot(y,mixed_data,1,2)
+pc2_pc3<-glPca.plot(y,mixed_data,2,3) 
+pc_legend<-g_legend(pc1_pc2)
+library(gridExtra)
+
+grid.arrange(arrangeGrob(pc1_pc2 +  theme(legend.position="none"), pc2_pc3 + theme(legend.position="none"), nrow=2 ), 
+pc_legend,nrow=1, widths=c(3,1.5,0.1))
+
+```
+
+PCA analysis of just auckland pops
+
+```{r echo=FALSE}
+
+data_ni<-gl.drop.pop(data_pop_gen_analysis,pop.list=c("Opito Bay","Kaikoura","Worser Bay","Mahia Peninsula",
+                                                "Mt Maunganui"),recalc=FALSE)
+ind_data<-read.csv("C://Users/wpear/Dropbox/Isopod Photos and Project//colouration_analysis/colouration_morph_data.csv",stringsAsFactors = F)
+morph<-as.data.frame(data_ni$other$ind.metrics)
+morph$morph<-ind_data$Morph[match(morph$id,ind_data$Code)]
+morph$year<-ifelse(grepl("ISO",morph$id),"2016","2018")
+data_ni$other$ind.metrics$pop<-morph$morph
+data_ni$pop<-as.factor(morph$pop)
+#data_ni$pop<-as.factor(as.character(morph$morph))
+y<-glPca(data_ni,nf=4)
+
+glPca.plot(y,data_ni,1,2)
+library(RColorBrewer);library(ggplot2)
+library(RColorBrewer);library(ggplot2)
+glPca.plot<-function(glPca_object,genlightobject,PrinX,PrinY){
+  #PrinX<-as.integer(PrinX)
+  #PrinY<-as.integer(PrinY)
+  pca.scores<-as.data.frame(glPca_object$scores)
+  pca.scores$pop <- pop(genlightobject)
+  cols <- brewer.pal(n = nPop(genlightobject), name = "BrBG")
+  df<-as.data.frame(cbind(pca.scores[,PrinX],pca.scores[,PrinY]))
+  df$Population<-pca.scores$pop
+  colnames(df)<-c("PCX","PCY","Population")
+  p <- ggplot(df, aes(x=df$PCX, y=PCY, colour=Population))
+  p <- p + geom_point(size=2)
+  var_frac <- glPca_object$eig/sum(glPca_object$eig)
+  x<-signif(sum(dplyr::nth(var_frac,PrinX)) * 100, 3)
+  y<-signif(sum(dplyr::nth(var_frac,PrinY)) * 100, 3)
+  p <- p + xlab(paste(paste0("PC",PrinX),paste0("(",x,"%"), "of variance explained)",sep=" "))
+  p <- p + ylab(paste(paste0("PC",PrinY),paste0("(",y,"%"), "of variance explained)",sep=" "))
+  p <- p + geom_hline(yintercept = 0) 
+  p <- p + geom_vline(xintercept = 0) 
+  p <- p + theme_bw()
+  p <- p + theme(axis.text = element_text(size = 12))
+  p <- p + theme(axis.title = element_text(size=14))
+  p <- p + theme(legend.text = element_text(size = 12))
+  p <- p + theme(legend.title = element_text(size = 14))
+  #p <- p + theme(plot.margin = margin(2,.8,2,.8,"cm"))
+  p  #+ scale_color_manual(labels = c("Browns Bay", "Hatfields Beach", 
+      #                               "Kaik\u14dura",
+       #                              "M\u101hia Peninsula","Mt Maunganui",
+        #                             "Opito Bay","Stanmore Bay 2015","Stanmore Bay",
+         #                            "Worser Bay"),values=brewer.pal(9,"Paired"))
+}
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+  return(legend)
+}
+
+```
+
+
+Conducting the partial mantel test
+
+```{r}
+structure_matrix<-matrix(nrow = 9,ncol = 9,data = 0)
+structure_matrix[upper.tri(structure_matrix,diag = T)] <- NA
+dist_mat
+fst_mat_hw
+structure_matrix[,2]<-1
+structure_matrix[9,2]<-0
+structure_matrix[9,]<-1
+structure_matrix[9,2]<-0
+#structure_matrix[9,1]<-1
+structure_matrix[upper.tri(structure_matrix,diag = T)] <- NA
+vegan::mantel.partial(zdis = dist_mat,xdis = fst_mat_hw,ydis = structure_mat)
+```
+
+
+
+pairwise relatedness estimates 
+```{r}
+library(dartR)
+library(related)
+data_pop_gen_analysis_sb<-gl.drop.pop(data_pop_gen_analysis,c("Worser Bay","Mahia Peninsula","Mt Maunganui","Kaikoura","Opito Bay"))
+rand_loc_drop<-sample(data_pop_gen_analysis_sb$loc.names,5903)
+#gl.drop.ind(data_migrate,ind.list = "BBFA3")
+library(dartR)
+data_genclass_randsub<-gl.drop.loc(data_pop_gen_analysis_sb,rand_loc_drop,v=0)
+radiator::genomic_converter(data_genclass_randsub,output="related")
+related_data<-readgenotypedata("./-38_radiator_genomic_converter_20191211@0801/radiator_data_20191211@0801_related.txt")
+related_data_est<-coancestry(related_data$gdata,trioml = 1)
+t<-related_data_est$relatedness
+t<-t[,c(2,3,5)]
+library(reshape2)
+rel_mat<-t(acast(t, ind1.id~ind2.id, value.var="trioml"))
+diag(rel_mat)<-0
+#rel_mat[is.na(rel_mat)]<-0
+#rel_mat[upper.tri(rel_mat)]<-t(rel_mat)
+rel_mat<-as.matrix(Matrix::forceSymmetric(rel_mat,uplo="L"))
+library(ape)
+c<-pcoa(rel_mat,correction = "lingoes")
+biplot(c)
+```
+
+
+
+```{r}
+library(RColorBrewer)
+x<-read.csv("./Structure_analysis/structure_locprior/outfile_q_loc.csv")
+col_pal<-brewer.pal(3,"Paired")
+pdf("./popgen_ms_submission/pop_gen_rev/supp_fig2.pdf",width=5,height=6)
+par(mar=c(3,11,2,3))
+barplot(t(x[,c(2,3,4)]),col=col_pal,xlab="Admixture Proportions",ylab=NULL,
+        space= 0,border=NA,axisnames = F,horiz=T, main = paste0("K=",3),
+        cex.axis = 1.2, cex.names = 1.2,cex.lab=1.2,cex.main=1.5)
+line_locs<-c(31,63,90,120)
+abline(h=line_locs)
+axis(at=line_locs-15,labels=c("Hatfields Beach 2015","Stanmore Bay 2015","Stanmore Bay 2018","Browns Bay 2018"),side=2,tck=0,cex.axis=1.2,las=1)
+dev.off()
+```
+
+
+PCA Centroid analysis
+
+```{r}
+#data_pop_gen_analysis_no_mig<-gl.drop.ind(data_pop_gen_analysis, c("MMMD7","MPFA1","MPFA5"))
+y<-glPca(data_pop_gen_analysis,nf=6)
+
+df.pca.x<- as.data.frame(y$scores)
+df.pca.x$pop <- data_pop_gen_analysis$pop
+df.pca.x$ind <- data_pop_gen_analysis$other$ind.metrics$id
+pca.centroids <- aggregate(df.pca.x[,1:2], list(Type = df.pca.x$pop), mean)
+df.pca.x$Centroid_1<-pca.centroids$PC1[match(df.pca.x$pop,pca.centroids$Type)]
+df.pca.x$Centroid_2<-pca.centroids$PC2[match(df.pca.x$pop,pca.centroids$Type)]
+#df.pca.x$Centroid_1_sd<-pca.centroids.sd$PC1[match(df.pca.x$pop,pca.centroids.sd$Type)]
+#df.pca.x$Centroid_2_sd<-pca.centroids.sd$PC2[match(df.pca.x$pop,pca.centroids.sd$Type)]
+df.pca.x$pc1_dist<-df.pca.x$PC1-df.pca.x$Centroid_1
+df.pca.x$pc2_dist<-df.pca.x$PC2-df.pca.x$Centroid_2
+df.pca.x$dist<-sqrt((df.pca.x$pc1_dist^2 ) + (df.pca.x$pc2_dist^2))
+
+pca.centroids.sd <- aggregate(df.pca.x[,9], list(Type = df.pca.x$pop), sd)
+nind <- aggregate(df.pca.x[,9], list(Type = df.pca.x$pop), length)
+mpop <- aggregate(df.pca.x[,9], list(Type = df.pca.x$pop), mean)
+pca.centroids.sd$n<-nind$x
+pca.centroids.sd$SE<-pca.centroids.sd$x/sqrt(pca.centroids.sd$n)
+df.pca.x$distsd <- pca.centroids.sd$x[match(df.pca.x$pop,pca.centroids.sd$Type)]
+df.pca.x$mean_dist <- mpop$x[match(df.pca.x$pop,mpop$Type)]
+#df.pca.x$cutoff<-df.pca.x$distsd*6
+#df.pca.x$z_score<-sqrt((df.pca.x$dist-df.pca.x$cutoff)^2)
+
+df.pca.x$dist<-sqrt((df.pca.x$pc1_dist^2 ) + (df.pca.x$pc2_dist^2))
+rownames(df.pca.x)<-1:length(df.pca.x$PC1)
+df.pca.x$dist_minus_sd<-df.pca.x$dist-sd(df.pca.x$dist)
+df.pca.x$dist_minus_sd<-sqrt(df.pca.x$dist_minus_sd ^2)
+df.pca.x$t_val<-df.pca.x$dist-(2*df.pca.x$distsd)
+plot(df.pca.x$dist~df.pca.x$t_val,col=df.pca.x$pop)
+library(rrcovHD)
+pc_o<-OutlierPCDist(x=y$scores,grouping = df.pca.x$pop)
+ma_o<-OutlierMahdist(y$scores,grouping = df.pca.x$pop)
+
+```
+
+```{r}
+library(dartR)
+load("./data_pop_gen_analysis.rData")
+#data_genclass<-gl.drop.pop(data_pop_gen_analysis,c("Stanmore Bay Old"),recalc = TRUE)
+rand_loc_drop<-sample(data_pop_gen_analysis$loc.names,7020)
+#gl.drop.ind(data_migrate,ind.list = "BBFA3")
+library(dartR)
+data_genclass_randsub<-gl.drop.loc(data_pop_gen_analysis,rand_loc_drop,v=0)
+radiator::genomic_converter(data_genclass_randsub,output="genepop", filename = "data_genepop_genclass.txt")
+```
+
+
+```{r}
+library(assignPOP)
+pop_ass<-read.Genepop("./data_genclass_genepop_edited.txt")
+mc_ass<-assign.MC(pop_ass,dir = "./assignPop_mc/")
+acc<-accuracy.MC("./assignPop_mc/")
+membership.plot("./assignPop_kc/")
+assign.matrix("./assignPop_kc/")
+mat<-read.table("./assignPop_kc/")
+accuracy.plot(acc,pop = "pop.1")
+colnames(x)<-names(table(data_pop_gen_analysis$pop))
+rownames(x)<-names(table(data_pop_gen_analysis$pop))
+
+```
+
